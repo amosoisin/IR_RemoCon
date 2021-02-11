@@ -9,6 +9,8 @@
 #include <wiringPi.h>
 #include "infrared.h"
 
+#define PIN_IN 25
+
 
 static int get_usec(suseconds_t *usec){
 	int ret = 0;
@@ -23,7 +25,7 @@ static int get_usec(suseconds_t *usec){
 }
 
 
-static int wait_state_change(int wait_state){
+static int wait_state(int state){
 	time_t start = 0;
 	time_t tmp = 0;
 
@@ -31,7 +33,7 @@ static int wait_state_change(int wait_state){
 	if (start == EFAULT){
 		return -start;
 	}
-	while(digitalRead(PIN_IN) == wait_state){
+	while(digitalRead(PIN_IN) == state){
 		tmp = time(NULL);
 		if (tmp == EFAULT){
 			return -start;
@@ -57,7 +59,7 @@ static int init_receiver(void){
 }
 
 
-int get_infrared_time(int *data){
+static int get_IRsignal(int *data){
 	int ret = 0;
 	struct timer_usec us_t;
 	int state = HIGH;
@@ -75,7 +77,7 @@ int get_infrared_time(int *data){
 	}
 
 	while(1){
-		ret = wait_state_change(state);
+		ret = wait_state(state);
 		if (ret == 1){
 			return cnt;
 		}
@@ -98,7 +100,7 @@ int get_infrared_time(int *data){
 }
 
 
-int calc_std_t(int *data){
+static int get_T(int *data){
 	int i = 3;
 	int cnt = 0;
 	int sum = 0;
@@ -111,146 +113,91 @@ int calc_std_t(int *data){
 }
 
 
-static int get_aeha_size(int *data, int data_len, int std_t){
-	int i = 1;
+static int check_format(int *data, struct ir *ir_data){
+	int idx = 0;
+	int sync_on;
+	int sync_off;
 
-	for (i=1; i<data_len; i++){
-#ifdef STD_AEHA
-		if (data[i] < 0 || data[i] > std_t*(AEHA_SYNC_ON+2)){
-#endif
-#ifdef STD_NEC
-		if (data[i] < 0 || data[i] > std_t*(NEC_SYNC_ON+2)){
-#endif
-			if (i < 6 || (i+4)%2 != 0){
-				printf("error:%d, %d", i, data[i]);
-				return -1;
-			}
-			return i;
-		}
-	}
-	return -1;
-}
-
-
-static int is_format_aeha(int *data, int data_len, int std_t){
-	int i;
-
-	if (data_len < 6 || (data_len+4)%2 != 0){
-		return 0;
-	}
-#ifdef STD_AEHA
-	if (!is_around_num(data[1], std_t*AEHA_SYNC_ON, std_t*2)){
-#endif
-#ifdef STD_NEC
-	if (!is_around_num(data[1], std_t*NEC_SYNC_ON, std_t*2)){
-#endif
-		printf("1. %d\n", data[1]);
-		return 0;
-	}
-#ifdef STD_AEHA
-	if (!is_around_num(data[2], std_t*AEHA_SYNC_OFF, std_t*2)){
-#endif
-#ifdef STD_NEC
-	if (!is_around_num(data[2], std_t*NEC_SYNC_OFF, std_t*2)){
-#endif
-		printf("2, %d\n", data[2]);
-		return 0;
+	switch (ir_data->std){
+	case AEHA:
+		sync_on = AEHA_SYNC_ON;
+		sync_off = AEHA_SYNC_OFF;
+		break;
+	case NEC:
+		sync_on = NEC_SYNC_ON;
+		sync_off = NEC_SYNC_OFF;
+		break;
 	}
 
-	for (i=3; i<data_len; i++){
-		if (is_around_num(data[i], std_t, std_t)){
+	if (!is_around_num(data[1], ir_data->T*sync_on, ir_data->T*2) || 
+			!is_around_num(data[2], ir_data->T*sync_off, ir_data->T*2)){
+		printf("line:%d\n", __LINE__);
+		return -1;
+	}
+
+	idx = 3;
+	while (data[idx] < ir_data->T*(sync_on+2) && data[idx] >= 0){
+		if (is_around_num(data[idx], ir_data->T, ir_data->T)){
+			idx++;
 			continue;
 		}
-		if (i%2 == 0 && i != data_len-1 &&
-				is_around_num(data[i], std_t*3, std_t)){
+		if (idx%2 == 0 && is_around_num(data[idx], ir_data->T*3, ir_data->T)){
+			idx++;
 			continue;
 		}
-		printf("%d\n", data[i]);
-		return 0;
+		return -1;
 	}
-	return 1;
-}
-
-
-static void convert_raw2digit(int *data, int data_len,
-								 struct ir_data *ir, int std_t){
-	int i = 0;
-	int bit = 7;
-	int cnt = 0;
-	uint8_t tmp = 0;
-
-	for (i=4; i<data_len-1; i+=2){
-		if (is_around_num(data[i], std_t*3, std_t)){
-	//		printf("%d,%d: %d %d -> %d\n", i, bit, data[i-1], data[i], 1);
-			tmp += (1 << bit);
-		}
-		else{
-	//		printf("%d,%d: %d %d -> %d\n", i, bit, data[i-1], data[i], 0);
-		}
-		if (bit == 0){
-			bit = 7;
-			ir->data[cnt] = tmp;
-			tmp = 0;
-			printf("%d, %d\n", cnt, ir->data[cnt]);
-			cnt++;
-			continue;
-		}
-		bit--;
+	if (idx < 6 || (idx-4)%2 != 0){
+		printf("line:%d\n", __LINE__);
+		return -1;
 	}
-	if (cnt < ir->size){
-		ir->data[cnt] = tmp;
-		printf("%d, %d\n", cnt, ir->data[cnt]);
+	if (!is_around_num(data[idx-1], ir_data->T, ir_data->T)){
+		printf("line:%d\n", __LINE__);
+		return -1;
 	}
-
-	return;
+	return idx;
 }
 
 
 int main(void){
 	int data[MAX_SIG_SIZE];
 	int data_len = 0;
-	int i = 0;
-	int std_t = 0;
-	int ret = 0;
-	struct ir_data ir;
+	int ret = -1;
+	struct ir ir_data;
 
-	memset(&ir, 0, sizeof(ir));
+	memset(&ir_data, 0, sizeof(ir_data));
+
+	ir_data.std = NEC;
 
 	ret = init_receiver();
 	if (ret < 0){
 		return 1;
 	}
 
-	data_len = get_infrared_time(data);
+	data_len = get_IRsignal(data);
 	if (data_len < 0){
 		return 1;
 	}
 
-	std_t = calc_std_t(data);
-	printf("std_t=%d\n", std_t);
+	ir_data.T = get_T(data);
+	printf("std:%d\n", ir_data.T);
 
-	data_len = get_aeha_size(data, data_len, std_t);
+	data_len = check_format(data, &ir_data);
 	if (data_len < 0){
 		printf("format error\n");
 		return 1;
 	}
 
-	ret = is_format_aeha(data, data_len, std_t);
-	if (ret == 0){
-		printf("format error\n");
-		return 1;
-	}
-
-	ir.size = (data_len-4)/2/8;
+	ir_data.size = (data_len-4)/2/8;
 	if (((data_len-4)/2)%8 != 0){
-		ir.size += 1;
+		ir_data.size += 1;
 	}
-	convert_raw2digit(data, data_len, &ir, std_t);
+	encode(data, data_len, &ir_data);
 
-	for (i=0; i<ir.size; i++){
-		printf("%d, ", ir.data[i]);
+	for (int i=0; i<ir_data.size; i++){
+		printf("%d, ", ir_data.data[i]);
 	}
 	printf("\n");
-	
+
 	return 0;
 }

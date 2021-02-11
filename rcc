@@ -1,0 +1,27 @@
+host=raspi
+target=`grep -m 1 TARGET Makefile | sed 's/TARGET = //'`
+
+compile () {
+	for f in ./*.c ./*.h Makefile
+	do
+		scp ./$f ${host}:~/tmp/
+	done
+	ssh ${host} "cd ~/tmp && make ${target}"
+}
+
+
+exec_app () {
+	ssh ${host} "cd ~/tmp && echo ./${target} && ./${target}"
+}
+
+case "$1" in
+	"compile")
+		compile;
+		;;
+	"exec")
+		exec_app;
+		;;
+	"clean")
+		ssh ${host} "cd ~/tmp && make clean"
+		;;
+esac

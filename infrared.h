@@ -1,16 +1,18 @@
-#define PIN_IN 25
+#include <sys/time.h>
+#include <stdint.h>
+
 #define KEEP_LIMIT_SEC 1
 #define MAX_SIG_SIZE 500
-#define MIN_SIG_SIZE 200
 #define CALC_STD_T_LEN 20
 
-#define MAX_DIG_SIZE (MAX_SIG_SIZE/8)
+#define AEHA 0x00
+#define NEC 0x01
 
-#define AEHA_SYNC_ON 8
-#define AEHA_SYNC_OFF 4
+#define AEHA_SYNC_ON 0x08
+#define AEHA_SYNC_OFF 0x04
 
-#define NEC_SYNC_ON 16
-#define NEC_SYNC_OFF 8
+#define NEC_SYNC_ON 0x10
+#define NEC_SYNC_OFF 0x08
 
 #define is_around_num(n, std, m) ((n) > (std)-(m) && (n) < (std)+(m))
 
@@ -21,7 +23,11 @@ struct timer_usec{
 };
 
 
-struct ir_data{
+struct ir{
+	uint8_t std;
+	uint32_t T;
 	uint8_t size;
-	uint8_t data[MAX_DIG_SIZE];
+	uint8_t data[MAX_SIG_SIZE/2/8];
 };
+
+void encode(int *data, int data_len, struct ir *ir_data);
