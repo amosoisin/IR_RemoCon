@@ -139,7 +139,19 @@ int encode(suseconds_t *data, uint8_t **dst, uint8_t std){
 }
 
 
-void decode(char *rcv, struct ir *dst){
-	memcpy(&dst->std, rcv, sizeof(dst->std));
-	printf("%d\n", dst->std);
+int decode(uint8_t *hex, int hex_size, struct ir *ir_data){
+	if (hex == NULL || ir_data == NULL){
+		return -EINVAL;
+	}
+	
+	memcpy(&ir_data->T, hex, sizeof(ir_data->T));
+	ir_data->T = ntohl(ir_data->T);
+	hex += sizeof(ir_data->T);
+	memcpy(&ir_data->std, hex, sizeof(ir_data->std));
+	hex += sizeof(ir_data->std);
+	memcpy(&ir_data->size, hex, sizeof(ir_data->size));
+	hex += sizeof(ir_data->size);
+	memcpy(&ir_data->data, hex, sizeof(ir_data->data));
+	hex += sizeof(ir_data->data);
+	return 0;
 }

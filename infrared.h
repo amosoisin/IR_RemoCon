@@ -31,4 +31,4 @@ struct ir{
 };
 
 int encode(suseconds_t *data, uint8_t **dst, uint8_t std);
-void decode(char *rcv, struct ir *dst);
+int decode(uint8_t *hex, int hex_size, struct ir *ir_data);
