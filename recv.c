@@ -12,15 +12,15 @@
 #define PIN_IN 25
 
 
-static int get_usec(suseconds_t *usec){
+static int get_usec(suseconds_t *us){
 	int ret = 0;
 	struct timeval tmp;
 
 	ret = gettimeofday(&tmp, NULL);
-	if (ret != 0){
+	if (ret < 0){
 		return ret;
 	}
-	*usec = tmp.tv_usec;
+	*us = tmp.tv_usec;
 	return 0;
 }
 
@@ -59,7 +59,7 @@ static int init_receiver(void){
 }
 
 
-static int get_IRsignal(int *data){
+static int get_IRsignal(suseconds_t *data){
 	int ret = 0;
 	struct timer_usec us_t;
 	int state = HIGH;
@@ -100,104 +100,47 @@ static int get_IRsignal(int *data){
 }
 
 
-static int get_T(int *data){
-	int i = 3;
-	int cnt = 0;
-	int sum = 0;
-
-	for (i=3; i<CALC_STD_T_LEN; i+=2){
-		sum += data[i];
-		cnt++;
-	}
-	return sum/cnt;
-}
-
-
-static int check_format(int *data, struct ir *ir_data){
-	int idx = 0;
-	int sync_on;
-	int sync_off;
-
-	switch (ir_data->std){
-	case AEHA:
-		sync_on = AEHA_SYNC_ON;
-		sync_off = AEHA_SYNC_OFF;
-		break;
-	case NEC:
-		sync_on = NEC_SYNC_ON;
-		sync_off = NEC_SYNC_OFF;
-		break;
-	}
-
-	if (!is_around_num(data[1], ir_data->T*sync_on, ir_data->T*2) || 
-			!is_around_num(data[2], ir_data->T*sync_off, ir_data->T*2)){
-		printf("line:%d\n", __LINE__);
-		return -1;
-	}
-
-	idx = 3;
-	while (data[idx] < ir_data->T*(sync_on+2) && data[idx] >= 0){
-		if (is_around_num(data[idx], ir_data->T, ir_data->T)){
-			idx++;
-			continue;
-		}
-		if (idx%2 == 0 && is_around_num(data[idx], ir_data->T*3, ir_data->T)){
-			idx++;
-			continue;
-		}
-		return -1;
-	}
-	if (idx < 6 || (idx-4)%2 != 0){
-		printf("line:%d\n", __LINE__);
-		return -1;
-	}
-	if (!is_around_num(data[idx-1], ir_data->T, ir_data->T)){
-		printf("line:%d\n", __LINE__);
-		return -1;
-	}
-	return idx;
-}
-
-
 int main(void){
-	int data[MAX_SIG_SIZE];
-	int data_len = 0;
+	suseconds_t raw[MAX_SIG_SIZE];
 	int ret = -1;
-	struct ir ir_data;
+	uint8_t *hex = NULL;
+	int hex_size = 0;
+	uint8_t std;
 
-	memset(&ir_data, 0, sizeof(ir_data));
-
-	ir_data.std = NEC;
+	std = AEHA;
 
 	ret = init_receiver();
 	if (ret < 0){
+		printf("line:%d\n", __LINE__);
 		return 1;
 	}
 
-	data_len = get_IRsignal(data);
-	if (data_len < 0){
+	ret = get_IRsignal(raw);
+	if (ret < 0){
+		printf("line:%d\n", __LINE__);
 		return 1;
 	}
 
-	ir_data.T = get_T(data);
-	printf("std:%d\n", ir_data.T);
-
-	data_len = check_format(data, &ir_data);
-	if (data_len < 0){
-		printf("format error\n");
-		return 1;
+ 	hex_size = encode(raw, &hex, std);
+	if (hex_size < 0){
+		printf("line:%d\n", __LINE__);
+		ret = hex_size;
+		goto free;
 	}
 
-	ir_data.size = (data_len-4)/2/8;
-	if (((data_len-4)/2)%8 != 0){
-		ir_data.size += 1;
-	}
-	encode(data, data_len, &ir_data);
-
-	for (int i=0; i<ir_data.size; i++){
-		printf("%d, ", ir_data.data[i]);
+	for (int i=0; i<hex_size; i++){
+		printf("%x ", hex[i]);
 	}
 	printf("\n");
 
+	if (hex != NULL){
+		free(hex);
+	}
 	return 0;
+
+free:
+	if (hex != NULL){
+		free(hex);
+	}
+	return ret;
 }

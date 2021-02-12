@@ -24,10 +24,11 @@ struct timer_usec{
 
 
 struct ir{
-	uint8_t std;
 	uint32_t T;
+	uint8_t std;
 	uint8_t size;
 	uint8_t data[MAX_SIG_SIZE/2/8];
 };
 
-void encode(int *data, int data_len, struct ir *ir_data);
+int encode(suseconds_t *data, uint8_t **dst, uint8_t std);
+void decode(char *rcv, struct ir *dst);
