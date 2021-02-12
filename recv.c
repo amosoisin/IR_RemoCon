@@ -102,7 +102,7 @@ static int get_IRsignal(suseconds_t *data){
 
 int main(void){
 	suseconds_t raw[MAX_SIG_SIZE];
-	int ret = -1;
+	int ret = 0;
 	uint8_t *hex = NULL;
 	int hex_size = 0;
 	uint8_t std;

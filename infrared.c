@@ -91,7 +91,7 @@ static void convert_bin(suseconds_t *data, int data_len, struct ir *ir_data){
 }
 
 
-static int make_ir(suseconds_t *data, struct ir *ir_data, uint8_t std){
+static int convert_raw2ir(suseconds_t *data, struct ir *ir_data, uint8_t std){
 	int data_len = 0;
 
 	ir_data->T = get_T(data);
@@ -109,7 +109,6 @@ static int make_ir(suseconds_t *data, struct ir *ir_data, uint8_t std){
 
 	convert_bin(data, data_len, ir_data);
 	return 0;
-
 }
 
 
@@ -120,7 +119,7 @@ int encode(suseconds_t *data, uint8_t **dst, uint8_t std){
 
 	memset(&ir_data, 0, sizeof(ir_data));
 
-	ret = make_ir(data, &ir_data, std);
+	ret = convert_raw2ir(data, &ir_data, std);
 	if (ret < 0){
 		return ret;
 	}
@@ -139,7 +138,7 @@ int encode(suseconds_t *data, uint8_t **dst, uint8_t std){
 }
 
 
-int decode(uint8_t *hex, int hex_size, struct ir *ir_data){
+static int convert_hex2ir(uint8_t *hex, int hex_size, struct ir *ir_data){
 	if (hex == NULL || ir_data == NULL){
 		return -EINVAL;
 	}
@@ -154,4 +153,44 @@ int decode(uint8_t *hex, int hex_size, struct ir *ir_data){
 	memcpy(&ir_data->data, hex, sizeof(ir_data->data));
 	hex += sizeof(ir_data->data);
 	return 0;
+}
+
+
+int decode(uint8_t *hex, int hex_size, suseconds_t *raw){
+	struct ir ir_data;
+	int ret = 0;
+	int raw_size = 2;
+	int i = 0;
+	int cnt = 0;
+	int sync_on;
+	int sync_off;
+
+	memset(&ir_data, 0, sizeof(ir_data));
+	ret = convert_hex2ir(hex, hex_size, &ir_data);
+	if (ret < 0){
+		return ret;
+	}
+
+	raw_size = 3 + ir_data.size*8*2;
+
+	switch (ir_data.std){
+	case AEHA:
+		sync_on = AEHA_SYNC_ON;
+		sync_off = AEHA_SYNC_OFF;
+		break;
+	case NEC:
+		sync_on = NEC_SYNC_ON;
+		sync_off = NEC_SYNC_OFF;
+		break;
+	}
+
+	raw[0] = sync_on*ir_data.T;
+	raw[1] = sync_off*ir_data.T;
+	for (i=2; i<raw_size-1; i+=2){
+		raw[i] = ir_data.T;
+		raw[i+1] = ir_data.data[cnt] == 0 ? ir_data.T : ir_data.T*3;
+		cnt++;
+	}
+	return raw_size;
+
 }
